@@ -47,15 +47,12 @@ def calc_end(run, launch):
     """Add run length to launch time and return end time in human readable format"""
     end = float(launch) + float(run)
     r_end_time = MacTimeBase + datetime.timedelta(seconds=float(end))
-    end_time = r_end_time.strftime("%Y-%m-%d %H:%M:%S")
-    return end_time
+    return r_end_time.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def chg_state(state):
     """Convert run state values and return strings"""
-    if state == 1:
-        return "Terminated"
-    return "Running"
+    return "Terminated" if state == 1 else "Running"
 
 
 def get_hostname(mac_addr, conn):
@@ -66,12 +63,7 @@ def get_hostname(mac_addr, conn):
     tmp_cursor.execute("SELECT SystemInformation.Value FROM SystemInformation \
                         WHERE SystemInformation.PropertyName = 'UnixHostName' \
                         AND SystemInformation.ComputerID = ?", tmp_tuple)
-    name = tmp_cursor.fetchone()
-    if name:
-        return name[0]
-    else:
-        name = "NA"
-        return name
+    return name[0] if (name := tmp_cursor.fetchone()) else "NA"
 
 
 def app_usage_plist(pl):
@@ -89,20 +81,18 @@ def app_usage_plist(pl):
                     for key in val:    # The other value is the dict with runData and name
                         if key != "Name":
                             for run_set in val[key]:    # The value of runData is a list of dicts
-                                run_list = []
-                                for x in app_list:
-                                    run_list.append(x)
+                                run_list = list(app_list)
                                 was_quit = "False"
                                 for item in run_set:
                                     if item == "Frontmost":
                                         frontmost = run_set[item]
-                                    if item == "Launched":
+                                    elif item == "Launched":
                                         launched = run_set[item]
-                                    if item == "runLength":
+                                    elif item == "runLength":
                                         run_length = run_set[item]
-                                    if item == "userName":
+                                    elif item == "userName":
                                         username = run_set[item]
-                                    if item == "wasQuit":
+                                    elif item == "wasQuit":
                                         was_quit = run_set[item]
                                 end = calc_end(run_length, launched)
                                 launched = conv_mac_time(launched)
@@ -125,9 +115,7 @@ def user_act_plist(pl):
                     for key in val:    # Second value is a dict of each login type + uid
                         if key != "uid":
                             for login_set in val[key]:    # Each key is a different login type with possibly >1 set of login/logout times
-                                login_list = []    # List that being written for each line of the csv
-                                for x in user_set_list:
-                                    login_list.append(x)    # Feed username/uid to list
+                                login_list = list(user_set_list)
                                 login_list.append(key)
                                 host = "NA"    # Set host to NA by default
                                 for item in login_set:
@@ -305,7 +293,7 @@ class Entry:
         filename = self.get_name()
 
         if self.is_directory():
-            filename = filename + '/'
+            filename = f'{filename}/'
 
         if self.descriptor.parent != 0x0:
             parent = self.index.get_entry(self.descriptor.parent)
@@ -317,17 +305,20 @@ class Entry:
         return path
 
     def __str__(self):
-        parts = []
+        parts = [
+            f'{k}: {v}'
+            for k, v in (
+                ('path', self.get_path().ljust(32)),
+                ('kind', self.get_kind().ljust(5)),
+                ('user', self.get_user().ljust(16)),
+                ('group', self.get_group().ljust(16)),
+                ('version', self.get_version()),
+            )
+            if v
+        ]
 
-        for k, v in (('path', self.get_path().ljust(32)),
-                     ('kind', self.get_kind().ljust(5)),
-                     ('user', self.get_user().ljust(16)),
-                     ('group', self.get_group().ljust(16)),
-                     ('version', self.get_version())):
-            if v:
-                parts.append('%s: %s' % (k, v))
 
-        return 'file: %s' % (' '.join(parts))
+        return f"file: {' '.join(parts)}"
 
 
 class Index:
@@ -400,13 +391,13 @@ def parse_index(buf):
 
 
 def print_namedtuple(item, output):
-    output.write(item.__class__.__name__ + ":")
+    output.write(f"{item.__class__.__name__}:")
     for field in item._fields:
         v = getattr(item, field)
         if isinstance(v, int):
             output.write('  - %s: 0x%x' % (field, v))
         else:
-            output.write('  - %s: %s' % (field, v))
+            output.write(f'  - {field}: {v}')
 
 
 def fscache(buf):
@@ -416,7 +407,7 @@ def fscache(buf):
         print_namedtuple(index.header, output)
         output.write("Files:")
         for entry in index.get_entries():
-            output.write('  - ' + str(entry) + "\n")
+            output.write(f'  - {str(entry)}' + "\n")
 
 
 def main():
@@ -443,25 +434,25 @@ def main():
         user_act_data = c.execute("SELECT * FROM UserUsage")
         user_activity(user_act_data, conn)
         conn.close()
-        print("AppUsageRMDB.csv and UserActivityRMDB.csv created in %s." % (WorkingDir))
+        print(f"AppUsageRMDB.csv and UserActivityRMDB.csv created in {WorkingDir}.")
     if args.uplist:
         print("Parsing User Activity plist...")
         with open(args.uplist, 'rb') as f:
             pl = plistlib.load(f)
             user_act_plist(pl)
-        print("UserActivityPlist.csv created in %s." % (WorkingDir))
+        print(f"UserActivityPlist.csv created in {WorkingDir}.")
     if args.aplist:
         print("Parsing Application Usage plist...")
         with open(args.aplist, 'rb') as f:
             pl = plistlib.load(f)
             app_usage_plist(pl)
-        print("AppUsagePlist.csv created in %s." % (WorkingDir))
+        print(f"AppUsagePlist.csv created in {WorkingDir}.")
     if args.fscache:
         print("Parsing filesystem cache...")
         with open(args.fscache, 'rb') as f:
             buf = f.read()
             fscache(buf)
-        print("fscache.txt created in %s." % (WorkingDir))
+        print(f"fscache.txt created in {WorkingDir}.")
     else:
         p.print_help()
 
